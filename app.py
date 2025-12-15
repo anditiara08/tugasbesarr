@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import joblib
 
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
@@ -11,8 +10,8 @@ from sklearn.metrics import accuracy_score
 # =========================
 # JUDUL APLIKASI
 # =========================
-st.title("Aplikasi Prediksi Loan Approval")
-st.write("Klasifikasi menggunakan Random Forest")
+st.title("Prediksi Loan Approval")
+st.write("Classification menggunakan Random Forest")
 
 # =========================
 # UPLOAD DATASET
@@ -20,57 +19,74 @@ st.write("Klasifikasi menggunakan Random Forest")
 st.subheader("Upload Dataset CSV")
 
 uploaded_file = st.file_uploader(
-    "Upload dataset Loan Approval (CSV)",
+    "Upload dataset Loan (CSV)",
     type=["csv"]
 )
 
-if uploaded_file is not None:
-    data = pd.read_csv(uploaded_file)
-    data.columns = data.columns.str.strip()
-    st.success("Dataset berhasil di-upload")
-else:
+if uploaded_file is None:
     st.warning("Silakan upload dataset CSV terlebih dahulu")
     st.stop()
 
+data = pd.read_csv(uploaded_file)
+data.columns = data.columns.str.strip()
+
+st.success("Dataset berhasil di-upload")
+
 # =========================
-# PREVIEW DATASET
+# PREVIEW DATA
 # =========================
 st.subheader("Preview Dataset")
 st.dataframe(data.head())
 
 # =========================
+# CEK KOLOM WAJIB
+# =========================
+required_columns = [
+    'loan_id',
+    'no_of_dependents',
+    'education',
+    'self_employed',
+    'income_annum',
+    'loan_amount',
+    'loan_term',
+    'cibil_score',
+    'residential_assets_value',
+    'commercial_assets_value',
+    'luxury_assets_value',
+    'bank_asset_value',
+    'loan_status'
+]
+
+if not all(col in data.columns for col in required_columns):
+    st.error("Format dataset tidak sesuai dengan yang diminta")
+    st.stop()
+
+# =========================
 # PREPROCESSING
 # =========================
-# Missing value numerik
-if 'LoanAmount' in data.columns:
-    data['LoanAmount'].fillna(data['LoanAmount'].mean(), inplace=True)
+# Drop loan_id (tidak berpengaruh ke prediksi)
+data.drop('loan_id', axis=1, inplace=True)
 
-if 'Loan_Amount_Term' in data.columns:
-    data['Loan_Amount_Term'].fillna(data['Loan_Amount_Term'].mean(), inplace=True)
-
-if 'Credit_History' in data.columns:
-    data['Credit_History'].fillna(data['Credit_History'].mode()[0], inplace=True)
-
-# Missing value kategorikal
+# Missing value
 for col in data.columns:
     if data[col].dtype == 'object':
         data[col].fillna(data[col].mode()[0], inplace=True)
+    else:
+        data[col].fillna(data[col].mean(), inplace=True)
 
 # =========================
-# ENCODING DATA KATEGORIKAL
+# ENCODING DATA KATEGORI
 # =========================
 le = LabelEncoder()
-for col in data.columns:
-    if data[col].dtype == 'object':
-        data[col] = le.fit_transform(data[col])
+
+data['education'] = le.fit_transform(data['education'])
+data['self_employed'] = le.fit_transform(data['self_employed'])
+data['loan_status'] = le.fit_transform(data['loan_status'])
+# Approved = 1, Rejected = 0 (biasanya)
 
 # =========================
 # FITUR & TARGET
 # =========================
-if 'loan_status' not in data.columns:
-    st.error("Kolom 'loan_status' tidak ditemukan dalam dataset")
-    st.stop()
-
 X = data.drop('loan_status', axis=1)
 y = data['loan_status']
 
@@ -86,22 +102,16 @@ X_train, X_test, y_train, y_test = train_test_split(
 )
 
 # =========================
-# LOAD / TRAIN MODEL
+# TRAIN MODEL
 # =========================
-MODEL_PATH = "random_forest_model.pkl"
+model = RandomForestClassifier(
+    n_estimators=100,
+    max_depth=10,
+    random_state=42
+)
 
-try:
-    model = joblib.load(MODEL_PATH)
-    st.success("Model berhasil dimuat dari file")
-except:
-    model = RandomForestClassifier(
-        n_estimators=100,
-        max_depth=10,
-        random_state=42
-    )
-    model.fit(X_train, y_train)
-    joblib.dump(model, MODEL_PATH)
-    st.success("Model berhasil dilatih dan disimpan")
+model.fit(X_train, y_train)
+st.success("Model berhasil dilatih")
 
 # =========================
 # EVALUASI MODEL
@@ -113,29 +123,45 @@ st.subheader("Evaluasi Model")
 st.write(f"Accuracy: **{accuracy:.2f}**")
 
 # =========================
-# INPUT USER
+# INPUT DATA BARU
 # =========================
 st.subheader("Input Data Pemohon")
 
-inputs = {}
-for col in X.columns:
-    if data[col].nunique() <= 5:
-        inputs[col] = st.selectbox(
-            col,
-            sorted(data[col].unique())
-        )
-    else:
-        inputs[col] = st.number_input(
-            col,
-            value=float(data[col].mean())
-        )
+no_of_dependents = st.number_input("Jumlah Tanggungan", min_value=0)
+education = st.selectbox("Pendidikan", ["Graduate", "Not Graduate"])
+self_employed = st.selectbox("Self Employed", ["Yes", "No"])
+income_annum = st.number_input("Pendapatan Tahunan", min_value=0)
+loan_amount = st.number_input("Jumlah Pinjaman", min_value=0)
+loan_term = st.number_input("Jangka Waktu Pinjaman (tahun)", min_value=1)
+cibil_score = st.number_input("CIBIL Score", min_value=300, max_value=900)
+residential_assets_value = st.number_input("Nilai Aset Residensial", min_value=0)
+commercial_assets_value = st.number_input("Nilai Aset Komersial", min_value=0)
+luxury_assets_value = st.number_input("Nilai Aset Mewah", min_value=0)
+bank_asset_value = st.number_input("Nilai Aset Bank", min_value=0)
+
+# Encoding input user
+education_val = 1 if education == "Graduate" else 0
+self_employed_val = 1 if self_employed == "Yes" else 0
 
 # =========================
 # PREDIKSI
 # =========================
 if st.button("Prediksi Loan"):
-    input_df = pd.DataFrame([inputs])
-    prediction = model.predict(input_df)[0]
+    input_data = pd.DataFrame([[
+        no_of_dependents,
+        education_val,
+        self_employed_val,
+        income_annum,
+        loan_amount,
+        loan_term,
+        cibil_score,
+        residential_assets_value,
+        commercial_assets_value,
+        luxury_assets_value,
+        bank_asset_value
+    ]], columns=X.columns)
+
+    prediction = model.predict(input_data)[0]
 
     if prediction == 1:
         st.success("✅ Loan DISETUJUI")
