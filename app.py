@@ -6,13 +6,12 @@ import os
 
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
+from sklearn.ensemble import RandomForestClassifier
 
 st.set_page_config(page_title="Loan Approval", layout="centered")
-
 st.title("Aplikasi Prediksi Loan Approval")
-st.write("Model Classification menggunakan Random Forest")
+st.write("Perbandingan Model Random Forest dan XGBoost")
 
 @st.cache_data
 def load_data():
@@ -23,9 +22,6 @@ def load_data():
     return data
 
 data = load_data()
-
-st.subheader("Preview Dataset")
-st.dataframe(data.head())
 
 num_cols = data.select_dtypes(include=np.number).columns
 for col in num_cols:
@@ -46,42 +42,46 @@ if "loan_id" in data.columns:
 X = data.drop(columns=drop_cols)
 y = data["loan_status"]
 
-st.write("Fitur yang dipakai model:")
-st.write(X.columns.tolist())
-
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42, stratify=y
 )
 
-MODEL_PATH = "random_forest_model.pkl"
+st.subheader("Pilih Model")
+model_choice = st.selectbox(
+    "Model Classification",
+    ["Random Forest", "XGBoost"]
+)
 
-retrain = True
-if os.path.exists(MODEL_PATH):
-    model = joblib.load(MODEL_PATH)
-    # cek kecocokan fitur
-    if hasattr(model, "feature_names_in_"):
-        if list(model.feature_names_in_) == list(X.columns):
-            retrain = False
+MODEL_RF = "random_forest_model.pkl"
+MODEL_XGB = "xgboost_model.pkl"
 
-if retrain:
-    model = RandomForestClassifier(
-        n_estimators=100,
-        max_depth=10,
-        random_state=42,
-        class_weight="balanced"
-    )
-    model.fit(X_train, y_train)
-    joblib.dump(model, MODEL_PATH)
-    st.success("Model dilatih ulang (fitur konsisten).")
-else:
-    st.success("Model lama cocok, berhasil dimuat.")
+if model_choice == "Random Forest":
+    if os.path.exists(MODEL_RF):
+        model = joblib.load(MODEL_RF)
+        st.success("Random Forest model dimuat.")
+    else:
+        model = RandomForestClassifier(
+            n_estimators=100,
+            max_depth=10,
+            random_state=42,
+            class_weight="balanced"
+        )
+        model.fit(X_train, y_train)
+        joblib.dump(model, MODEL_RF)
+        st.success("Random Forest model dilatih.")
+
+else:  # XGBoost
+    if os.path.exists(MODEL_XGB):
+        model = joblib.load(MODEL_XGB)
+        st.success("XGBoost model dimuat.")
+    else:
+        st.error("File xgboost_model.pkl tidak ditemukan!")
 
 y_pred = model.predict(X_test)
 accuracy = accuracy_score(y_test, y_pred)
 
 st.subheader("Akurasi Model")
-st.write(f"Accuracy: **{accuracy:.2f}**")
-
+st.write(f"Accuracy: **{accuracy:.2f}**"
 st.subheader("Input Data Pemohon")
 
 inputs = {}
@@ -93,8 +93,8 @@ for col in X.columns:
 
 if st.button("Prediksi Loan"):
     input_df = pd.DataFrame([inputs])
-    proba = model.predict_proba(input_df)[0][1]
 
+    proba = model.predict_proba(input_df)[0][1]
     st.write(f"Peluang Disetujui: **{proba:.2%}**")
 
     if proba >= 0.35:
@@ -102,10 +102,10 @@ if st.button("Prediksi Loan"):
     else:
         st.error("❌ Loan DITOLAK")
 
-st.subheader("Feature Importance")
-importance_df = pd.DataFrame({
-    "Fitur": X.columns,
-    "Pengaruh": model.feature_importances_
-}).sort_values(by="Pengaruh", ascending=False)
-
-st.dataframe(importance_df)
+if hasattr(model, "feature_importances_"):
+    st.subheader("Feature Importance")
+    importance_df = pd.DataFrame({
+        "Fitur": X.columns,
+        "Pengaruh": model.feature_importances_
+    }).sort_values(by="Pengaruh", ascending=False)
+    st.dataframe(importance_df)
